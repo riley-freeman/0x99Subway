@@ -1,0 +1,9 @@
+@Middleman_HostAddress = http://localhost:5000
+
+GET {{Middleman_HostAddress}}/
+###
+
+GET {{Middleman_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
