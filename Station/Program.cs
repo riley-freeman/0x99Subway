@@ -1,25 +1,27 @@
 using System.Net.WebSockets;
-using System.Reflection;
 using System.Text;
 
-[assembly:AssemblyVersion("25.0.0.0")]
-class Station
+namespace Station;
+
+internal class Station
 {
-    private const short TUNNEL_PORT = 9989;
-    private const string TUNNEL_ADDRESS = "localhost";
+    private const short TunnelPort = 9989;
+    private const string TunnelAddress = "localhost";
 
-    private const string SIGNATURE = "_X99_SUBWAY_STATION_";
+    private const int MaxConnectionRetryTimeout = 60;
+    private const int ConnectionRetryTimeoutStep = 5;
 
-    private ClientWebSocket webSocket;
+    private const string Signature = "_X99_SUBWAY_STATION_";
+
+    private readonly ClientWebSocket _webSocket;
     
-    private Station(Uri uri, string username, string password)
+    private Station(Uri uri, string? username, string? password)
     {
-        webSocket = new ClientWebSocket();
-        webSocket.ConnectAsync(uri, CancellationToken.None).Wait();
+        _webSocket = ConnectSocket(uri, MaxConnectionRetryTimeout, ConnectionRetryTimeoutStep);
         
         _ = Task.Run(async () =>
         {
-            var sBuffer = new List<byte>(Encoding.UTF8.GetBytes(SIGNATURE));
+            var sBuffer = new List<byte>(Encoding.UTF8.GetBytes(Signature));
 
             var version = typeof(Station).Assembly.GetName().Version!;
             sBuffer.AddRange(BitConverter.GetBytes(version.Major));
@@ -27,17 +29,19 @@ class Station
             sBuffer.AddRange(BitConverter.GetBytes(version.Build));
             sBuffer.AddRange(BitConverter.GetBytes(version.Revision));
 
-            var login = $"{username}:{password}";
+            var u = username ?? ReadUsername();
+            var p = password ?? ReadPassword();
+            var login = $"{u}:{p}";
             var cBuffer = new List<byte>(Encoding.UTF8.GetBytes(login));
 
-            await webSocket.SendAsync(
+            await _webSocket.SendAsync(
                 new ArraySegment<byte>(sBuffer.ToArray()),
                 WebSocketMessageType.Binary,
                 true,
                 CancellationToken.None
             );
 
-            await webSocket.SendAsync(
+            await _webSocket.SendAsync(
                 new ArraySegment<byte>(cBuffer.ToArray()),
                 WebSocketMessageType.Text,
                 true,
@@ -46,68 +50,126 @@ class Station
         });
     }
 
+    ~Station()
+    {
+        _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
+    }
+
     private async Task Run()
     {
         var buffer = new byte[4096];
-        while (webSocket.State == WebSocketState.Open)
+        while (_webSocket.State == WebSocketState.Open)
         {
-            var result = await webSocket.ReceiveAsync(buffer, CancellationToken.None);
-            if (result.MessageType == WebSocketMessageType.Text)
+            var result = await _webSocket.ReceiveAsync(buffer, CancellationToken.None);
+            switch (result.MessageType)
             {
+                case WebSocketMessageType.Text:
+                    var bufferText =  Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    Console.WriteLine($"New Buffer {bufferText}");
+                    break;
+                case WebSocketMessageType.Binary:
+                    break;
+                case WebSocketMessageType.Close:
+                    await _webSocket.CloseOutputAsync(
+                        WebSocketCloseStatus.NormalClosure,
+                        string.Empty,
+                        CancellationToken.None
+                    );
+                    break;
                 
+                default:
+                    throw new ArgumentOutOfRangeException();
             }
         }
     }
     
     
-    static void Main(string[] args)
+    private static void Main(string[] args)
     {
         // Create a Uri
-        var uri = new Uri($"ws://{TUNNEL_ADDRESS}:{TUNNEL_PORT}");
+        var uri = new Uri($"ws://{TunnelAddress}:{TunnelPort}/station_clock_in");
         
-        // Get the user's credentials
-        Console.Write("Please enter your Box username: ");
-        var username = Console.ReadLine()!;
-        while (username.Length is < 1 or > 32)
-        {
-            username = Console.ReadLine()!;
-        }
-        
-        Console.Write("Please enter your Box password: ");
-        var password = ReadPassword();
+        var station = new Station(uri, null, null);
+        station.Run().Wait();
+    }
 
-        var station = new Station(uri, username, password);
-        station.Run();
+    // Retries connecting to a tunnel over and over.
+    private static ClientWebSocket ConnectSocket(Uri uri, int maxTimeout, int step)
+    {
+        var timeout = step;
+        var trying = true;
+        ClientWebSocket? socket = null;
+        while (trying)
+        {
+            try
+            {
+                Console.WriteLine($"Connecting to '{uri}'");
+                socket = new ClientWebSocket();
+                socket.ConnectAsync(uri, CancellationToken.None).Wait();
+                trying = false;
+            }
+            catch
+            {
+                Console.Error.WriteLine($"Failed connecting to '{uri}', trying again in {timeout} seconds");
+                Thread.Sleep(TimeSpan.FromSeconds(timeout));
+
+                // Increment the timeout
+                timeout += step;
+                if (timeout > maxTimeout) timeout = maxTimeout;
+            }
+        }
+
+        return socket!;
+    }
+    
+    private static string ReadUsername()
+    {
+        while (true)
+        {
+            Console.Write("Please enter your username: ");
+            var username = Console.ReadLine();
+            if (!string.IsNullOrWhiteSpace(username) && username.Length is >= 1 and <= 64)
+                return username;
+            
+            Console.WriteLine("Sorry, something went wrong!");
+        }
+    }
+    
+    private static string ReadPassword()
+    {
+        while (true)
+        {
+            Console.Write("Please enter your password: ");
+            var password = ReadPasswordString();
+            if (password.Length is >= 1 and <= 24) return password;
+            Console.WriteLine("Sorry, something went wrong!");
+        }
     }
     
     // Reads password from Console with optional masking character.
     // If mask == '\0' then nothing is shown (no masking chars), characters are hidden entirely.
-    static string ReadPassword(char mask = '*')
+    private static string ReadPasswordString(char mask = '*')
     {
         var pwd = new StringBuilder();
-        ConsoleKeyInfo key;
 
         while (true)
         {
-            key = Console.ReadKey(intercept: true); // intercept = true => keystroke not displayed automatically
+            var key = Console.ReadKey(intercept: true);
 
             if (key.Key == ConsoleKey.Enter)
-            {
                 break;
-            }
-            else if (key.Key == ConsoleKey.Backspace)
+            
+            if (key.Key == ConsoleKey.Backspace)
             {
-                if (pwd.Length > 0)
-                {
-                    // remove last character from the buffer
-                    pwd.Length--;
+                if (pwd.Length <= 0) continue;
+                // remove last character from the buffer
+                pwd.Length--;
 
-                    // remove last mask character from console if we're showing masks
-                    if (mask != '\0')
-                    {
-                        // move cursor back, write space, move back again
-                        Console.Write("\b \b");
-                    }
+                // remove last mask character from console if we're showing masks
+                if (mask != '\0')
+                {
+                    // move cursor back, write space, move back again
+                    Console.Write("\b \b");
                 }
                 // else ignore backspace when nothing to delete
             }
