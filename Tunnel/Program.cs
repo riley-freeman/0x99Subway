@@ -1,26 +1,32 @@
 using System.Net.WebSockets;
 using System.Text;
+using Core;
 
 namespace Tunnel;
+
 public class Tunnel
 {
     private const string ExpectedSignature = "_X99_SUBWAY_STATION_";
-    
+
     private readonly WebApplication _app;
+
+    private readonly Dictionary<string, Station.Station> stations;
+
     private Tunnel(WebApplication app)
     {
         _app = app;
-        if (app.Environment.IsDevelopment())
-        {
-            app.MapOpenApi();
-        }
-        
+        if (app.Environment.IsDevelopment()) app.MapOpenApi();
+
         app.MapGet("/", () => "Hello World!")
             .WithName("Landing Page");
-        
+
         // Maps a user's request to a station
-        app.MapGet("/@{id}", (string id) => $"Station ID: {id}");
-        
+        stations = new Dictionary<string, Station.Station>();
+        app.MapGet("/@{id}",
+            (string id) => stations.ContainsKey(id)
+                ? $"{id} IS CONNECTED TO THE SERVER!"
+                : $"{id} IS NOT CONNECTED TO THE SERVER!");
+
         // Begins a station connection
         app.Map("/station_clock_in", StationClockIn);
 
@@ -32,18 +38,18 @@ public class Tunnel
     {
         _app.Run();
     }
-    
+
     private static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddOpenApi();
-        
+
         var app = builder.Build();
         var tunnel = new Tunnel(app);
         tunnel.Run();
     }
 
-    private static async Task StationClockIn(HttpContext context)
+    private async Task StationClockIn(HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest) return;
 
@@ -53,7 +59,7 @@ public class Tunnel
         var fBuffer = new byte[512];
         await webSocket.ReceiveAsync(fBuffer.AsMemory(), CancellationToken.None);
 
-        var signature = Encoding.UTF8.GetString(fBuffer[0..ExpectedSignature.Length]);
+        var signature = Encoding.UTF8.GetString(fBuffer[..ExpectedSignature.Length]);
 
         // Receive the client's version
         var versionBytes = fBuffer[ExpectedSignature.Length..];
@@ -75,6 +81,7 @@ public class Tunnel
             );
             return;
         }
+
         if (cv != new Version(25, 0, 0, 0))
         {
             await webSocket.CloseAsync(
@@ -100,19 +107,61 @@ public class Tunnel
         // TODO actually authenticate
 
         // Write to the station they logged in successfully
-        var message = Encoding.UTF8.GetBytes("LOGIN SUCCESSFUL");
-        await webSocket.SendAsync(message, WebSocketMessageType.Text, true, CancellationToken.None);
+        var loginMessage = new Message
+        {
+            type = MessageType.LoginSuccessful
+        };
+        await webSocket.SendAsync(loginMessage.ToArraySegment(), WebSocketMessageType.Text, true,
+            CancellationToken.None);
 
-        // Close the websocket
-        await webSocket.CloseAsync(
-            WebSocketCloseStatus.NormalClosure,
-            "We are closing due to nothing being implemented yet.",
-            CancellationToken.None
-        );
+        // Create a station object & add it to the dictionary
+        var station = new Station.Station(webSocket);
+        stations.Add(username, station);
+
+        // Poll the station's messages
+        while (webSocket.State == WebSocketState.Open)
+        {
+            var buffer = new byte[4096];
+            
+            // Try to receive data from the websocket
+            ValueWebSocketReceiveResult result;
+            try
+            {
+                result = await webSocket.ReceiveAsync(buffer.AsMemory(), CancellationToken.None);
+            }
+            catch (WebSocketException)
+            {
+                stations.Remove(username);
+                break;
+            }
+            
+            switch (result.MessageType)
+            {
+                case WebSocketMessageType.Text:
+                    var message = Message.FromBytes(buffer);
+                    if (message == null) throw new ArgumentException();
+
+                    switch (message.type)
+                    {
+                        case MessageType.LoginSuccessful:
+                        case MessageType.LoginFailed:
+                        case MessageType.PageRequest:
+                        case MessageType.Invalid:
+                        default:
+                            throw new ArgumentOutOfRangeException();
+                    }
+
+                    break;
+
+                case WebSocketMessageType.Close:
+                    await webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, string.Empty,
+                        CancellationToken.None);
+                    break;
+
+                case WebSocketMessageType.Binary:
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
     }
 }
-
-
-
-
-

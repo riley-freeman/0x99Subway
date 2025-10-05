@@ -1,9 +1,11 @@
 using System.Net.WebSockets;
 using System.Text;
+using System.Text.Json;
+using Core;
 
 namespace Station;
 
-internal class Station
+public class Station : IDisposable
 {
     private const short TunnelPort = 9989;
     private const string TunnelAddress = "localhost";
@@ -13,12 +15,20 @@ internal class Station
 
     private const string Signature = "_X99_SUBWAY_STATION_";
 
-    private readonly ClientWebSocket _webSocket;
-    
+    private readonly ClientWebSocket? _cws;
+
+    private readonly WebSocket? _socket;
+
+
+    public Station(WebSocket webSocket)
+    {
+        _socket = webSocket;
+    }
+
     private Station(Uri uri, string? username, string? password)
     {
-        _webSocket = ConnectSocket(uri, MaxConnectionRetryTimeout, ConnectionRetryTimeoutStep);
-        
+        _cws = ConnectSocket(uri, MaxConnectionRetryTimeout, ConnectionRetryTimeoutStep);
+
         _ = Task.Run(async () =>
         {
             var sBuffer = new List<byte>(Encoding.UTF8.GetBytes(Signature));
@@ -34,14 +44,14 @@ internal class Station
             var login = $"{u}:{p}";
             var cBuffer = new List<byte>(Encoding.UTF8.GetBytes(login));
 
-            await _webSocket.SendAsync(
+            await _cws.SendAsync(
                 new ArraySegment<byte>(sBuffer.ToArray()),
                 WebSocketMessageType.Binary,
                 true,
                 CancellationToken.None
             );
 
-            await _webSocket.SendAsync(
+            await _cws.SendAsync(
                 new ArraySegment<byte>(cBuffer.ToArray()),
                 WebSocketMessageType.Text,
                 true,
@@ -50,45 +60,79 @@ internal class Station
         });
     }
 
-    ~Station()
+    public void Dispose()
     {
-        _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
+
+    ~Station() => Dispose(false);
+
+    private void Dispose(bool disposing)
+    {
+        _socket?.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
+        _cws?.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
+        
+        _socket?.Dispose();
+        _cws?.Dispose();
+    }
+    
 
     private async Task Run()
     {
         var buffer = new byte[4096];
-        while (_webSocket.State == WebSocketState.Open)
+        if (_cws is null) throw new ArgumentNullException();
+        while (_cws.State == WebSocketState.Open)
         {
-            var result = await _webSocket.ReceiveAsync(buffer, CancellationToken.None);
+            var result = await _cws.ReceiveAsync(buffer, CancellationToken.None);
             switch (result.MessageType)
             {
                 case WebSocketMessageType.Text:
-                    var bufferText =  Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    Console.WriteLine($"New Buffer {bufferText}");
+                    var encodedText = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    var message = JsonSerializer.Deserialize<Message>(encodedText);
+                    if (message == null) throw new ArgumentException();
+
+                    switch (message.type)
+                    {
+                        case MessageType.LoginSuccessful:
+                            Console.WriteLine("Successfully logged in to the network!");
+                            break;
+
+                        case MessageType.LoginFailed:
+                            Console.WriteLine(
+                                "Authentication has either failed or been revoked! Please restart this process!");
+                            break;
+
+                        case MessageType.PageRequest:
+                        case MessageType.Invalid:
+                        default:
+                            throw new ArgumentOutOfRangeException();
+                    }
+
                     break;
-                case WebSocketMessageType.Binary:
-                    break;
+
                 case WebSocketMessageType.Close:
-                    await _webSocket.CloseOutputAsync(
+                    await _cws.CloseOutputAsync(
                         WebSocketCloseStatus.NormalClosure,
                         string.Empty,
                         CancellationToken.None
                     );
+                    _cws.Dispose();
                     break;
-                
+
+                case WebSocketMessageType.Binary:
                 default:
                     throw new ArgumentOutOfRangeException();
             }
         }
     }
-    
-    
+
+
     private static void Main(string[] args)
     {
         // Create a Uri
         var uri = new Uri($"ws://{TunnelAddress}:{TunnelPort}/station_clock_in");
-        
+
         var station = new Station(uri, null, null);
         station.Run().Wait();
     }
@@ -100,7 +144,6 @@ internal class Station
         var trying = true;
         ClientWebSocket? socket = null;
         while (trying)
-        {
             try
             {
                 Console.WriteLine($"Connecting to '{uri}'");
@@ -117,11 +160,10 @@ internal class Station
                 timeout += step;
                 if (timeout > maxTimeout) timeout = maxTimeout;
             }
-        }
 
         return socket!;
     }
-    
+
     private static string ReadUsername()
     {
         while (true)
@@ -130,11 +172,11 @@ internal class Station
             var username = Console.ReadLine();
             if (!string.IsNullOrWhiteSpace(username) && username.Length is >= 1 and <= 64)
                 return username;
-            
+
             Console.WriteLine("Sorry, something went wrong!");
         }
     }
-    
+
     private static string ReadPassword()
     {
         while (true)
@@ -145,7 +187,7 @@ internal class Station
             Console.WriteLine("Sorry, something went wrong!");
         }
     }
-    
+
     // Reads password from Console with optional masking character.
     // If mask == '\0' then nothing is shown (no masking chars), characters are hidden entirely.
     private static string ReadPasswordString(char mask = '*')
@@ -154,11 +196,11 @@ internal class Station
 
         while (true)
         {
-            var key = Console.ReadKey(intercept: true);
+            var key = Console.ReadKey(true);
 
             if (key.Key == ConsoleKey.Enter)
                 break;
-            
+
             if (key.Key == ConsoleKey.Backspace)
             {
                 if (pwd.Length <= 0) continue;
@@ -167,19 +209,14 @@ internal class Station
 
                 // remove last mask character from console if we're showing masks
                 if (mask != '\0')
-                {
                     // move cursor back, write space, move back again
                     Console.Write("\b \b");
-                }
                 // else ignore backspace when nothing to delete
             }
             else if (!char.IsControl(key.KeyChar))
             {
                 pwd.Append(key.KeyChar);
-                if (mask != '\0')
-                {
-                    Console.Write(mask);
-                }
+                if (mask != '\0') Console.Write(mask);
             }
             // ignore other control keys (arrows, etc.)
         }
