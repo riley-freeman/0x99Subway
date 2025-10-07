@@ -10,28 +10,33 @@ public class Tunnel
 
     private readonly WebApplication _app;
 
-    private readonly Dictionary<string, Station.Station> stations;
+    public static readonly Dictionary<string, Station.Station> Stations = new();
 
     private Tunnel(WebApplication app)
     {
         _app = app;
         if (app.Environment.IsDevelopment()) app.MapOpenApi();
-
-        app.MapGet("/", () => "Hello World!")
-            .WithName("Landing Page");
+        
 
         // Maps a user's request to a station
-        stations = new Dictionary<string, Station.Station>();
-        app.MapGet("/@{id}",
-            (string id) => stations.ContainsKey(id)
-                ? $"{id} IS CONNECTED TO THE SERVER!"
-                : $"{id} IS NOT CONNECTED TO THE SERVER!");
+        // app.MapGet("/@{id}/{*rest}",
+        //     (string id, string rest) => $"Attempting to get '/{rest}' from @{id}" +
+        //                                 (Stations.ContainsKey(id) ? 
+        //                                     "Miraculously, the station is connected!" : 
+        //                                     "Tragically, it was not around"));
 
         // Begins a station connection
-        app.Map("/station_clock_in", StationClockIn);
+        app.Map("/station-clock-in", StationClockIn);
 
         app.UseHttpsRedirection();
+        app.UseStaticFiles();
+        app.UseRouting();
         app.UseWebSockets();
+        // app.UseAuthentication();
+        
+        app.MapControllers();
+        app.MapRazorPages();
+        app.MapBlazorHub();
     }
 
     private void Run()
@@ -43,6 +48,8 @@ public class Tunnel
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddOpenApi();
+        builder.Services.AddRazorPages();
+        builder.Services.AddServerSideBlazor();
 
         var app = builder.Build();
         var tunnel = new Tunnel(app);
@@ -116,7 +123,7 @@ public class Tunnel
 
         // Create a station object & add it to the dictionary
         var station = new Station.Station(webSocket);
-        stations.Add(username, station);
+        Stations.Add(username, station);
 
         // Poll the station's messages
         while (webSocket.State == WebSocketState.Open)
@@ -131,7 +138,7 @@ public class Tunnel
             }
             catch (WebSocketException)
             {
-                stations.Remove(username);
+                Stations.Remove(username);
                 break;
             }
             

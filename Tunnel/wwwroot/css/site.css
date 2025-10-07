@@ -1,0 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
+:root {
+    --black: rgb(21, 21, 21);
+    --white: rgb(255, 255, 255);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Times New Roman', sans;
+    font-weight: 400;
+    font-size: 1rem;
+}
+
+p {
+    font-family: 'Open Sans', sans-serif;
+}
+
+/* Layout */
+.block {
+    display: block;
+}
+
+.inline {
+    display: inline;
+}
+
+.inline-block {
+    display: inline-block;
+}
+
+/* Spacing */
+.no-margin {
+    margin: 0;
+}
+
+.no-padding {
+    padding: 0;
+}
+
+/* Text Text Text */
+.text-xl {
+    font-weight: bold;
+    font-size: 4rem;
+}
+
+.text-l {
+    font-weight: bold;
+    font-size: 2rem;
+}
+
+.text-m {
+    font-size: 1rem;
+}
+
+.text-s {
+    font-size: 0.75rem;
+}
+
+.text-xs {
+    font-size: 0.5rem;
+}
+
+.text-black {
+    color: var(--black);
+}
+
+.text-white {
+    color: var(--white);
+}
+
+.bold {
+    font-weight: bold !important;
+}
+
+.italic {
+    font-style: italic !important;
+}
+
+/* Colors */ 
+.black {
+    background-color: var(--black);
+}
+
+.white {
+    background-color: var(--white);
+}
+

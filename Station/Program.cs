@@ -130,9 +130,7 @@ public class Station : IDisposable
 
     private static void Main(string[] args)
     {
-        // Create a Uri
-        var uri = new Uri($"ws://{TunnelAddress}:{TunnelPort}/station_clock_in");
-
+        var uri = new Uri($"ws://{TunnelAddress}:{TunnelPort}/station-clock-in");
         var station = new Station(uri, null, null);
         station.Run().Wait();
     }
