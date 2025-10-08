@@ -66,17 +66,20 @@ public class Station : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    ~Station() => Dispose(false);
+    ~Station()
+    {
+        Dispose(false);
+    }
 
     private void Dispose(bool disposing)
     {
         _socket?.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
         _cws?.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
-        
+
         _socket?.Dispose();
         _cws?.Dispose();
     }
-    
+
 
     private async Task Run()
     {
@@ -130,7 +133,7 @@ public class Station : IDisposable
 
     private static void Main(string[] args)
     {
-        var uri = new Uri($"ws://{TunnelAddress}:{TunnelPort}/station-clock-in");
+        var uri = new Uri($"wss://{TunnelAddress}:{TunnelPort}/station-clock-in");
         var station = new Station(uri, null, null);
         station.Run().Wait();
     }

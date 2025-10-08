@@ -6,17 +6,18 @@ namespace Tunnel;
 
 public class Tunnel
 {
+    private const string Signature = "_X99_SUBWAY_TUNNEL_";
     private const string ExpectedSignature = "_X99_SUBWAY_STATION_";
 
-    private readonly WebApplication _app;
-
     public static readonly Dictionary<string, Station.Station> Stations = new();
+
+    private readonly WebApplication _app;
 
     private Tunnel(WebApplication app)
     {
         _app = app;
         if (app.Environment.IsDevelopment()) app.MapOpenApi();
-        
+
 
         // Maps a user's request to a station
         // app.MapGet("/@{id}/{*rest}",
@@ -33,7 +34,7 @@ public class Tunnel
         app.UseRouting();
         app.UseWebSockets();
         // app.UseAuthentication();
-        
+
         app.MapControllers();
         app.MapRazorPages();
         app.MapBlazorHub();
@@ -62,6 +63,12 @@ public class Tunnel
 
         var webSocket = await context.WebSockets.AcceptWebSocketAsync();
 
+        // Send the Tunnel's signature
+        var utf8Signature = Encoding.UTF8.GetBytes(Signature);
+        var segment = new ArraySegment<byte>(utf8Signature);
+        await webSocket.SendAsync(segment, WebSocketMessageType.Text, true,
+            CancellationToken.None);
+        
         // Get the client info
         var fBuffer = new byte[512];
         await webSocket.ReceiveAsync(fBuffer.AsMemory(), CancellationToken.None);
@@ -129,7 +136,7 @@ public class Tunnel
         while (webSocket.State == WebSocketState.Open)
         {
             var buffer = new byte[4096];
-            
+
             // Try to receive data from the websocket
             ValueWebSocketReceiveResult result;
             try
@@ -141,7 +148,7 @@ public class Tunnel
                 Stations.Remove(username);
                 break;
             }
-            
+
             switch (result.MessageType)
             {
                 case WebSocketMessageType.Text:
