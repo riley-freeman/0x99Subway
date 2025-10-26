@@ -1,63 +1,61 @@
 using System.Net.WebSockets;
+using System.Reflection;
+using System.Security.Authentication;
 using System.Text;
-using System.Text.Json;
-using Core;
+using Crayon.Box.Messages;
 
-namespace Station;
+namespace Crayon.Box;
 
-public class Station : IDisposable
+public class Client : IDisposable
 {
-    private const short TunnelPort = 9989;
-    private const string TunnelAddress = "localhost";
-
     private const int MaxConnectionRetryTimeout = 60;
     private const int ConnectionRetryTimeoutStep = 5;
 
-    private const string Signature = "_X99_SUBWAY_STATION_";
-
     private readonly ClientWebSocket? _cws;
-
     private readonly WebSocket? _socket;
 
 
-    public Station(WebSocket webSocket)
+    public Client(WebSocket webSocket)
     {
         _socket = webSocket;
     }
 
-    private Station(Uri uri, string? username, string? password)
+    public Client(Uri uri, string? username, string? password)
     {
         _cws = ConnectSocket(uri, MaxConnectionRetryTimeout, ConnectionRetryTimeoutStep);
 
-        _ = Task.Run(async () =>
+        Task.Run(async () =>
         {
-            var sBuffer = new List<byte>(Encoding.UTF8.GetBytes(Signature));
+            // Validate the server signature 
+            var ssBuffer = new byte[Config.ServerSignature.Length];
+            await _cws.ReceiveAsync(ssBuffer.AsMemory(), CancellationToken.None);
+            var serverSignature = Config.StringEncoding.GetString(ssBuffer);
 
-            var version = typeof(Station).Assembly.GetName().Version!;
-            sBuffer.AddRange(BitConverter.GetBytes(version.Major));
-            sBuffer.AddRange(BitConverter.GetBytes(version.Minor));
-            sBuffer.AddRange(BitConverter.GetBytes(version.Build));
-            sBuffer.AddRange(BitConverter.GetBytes(version.Revision));
+            // Make sure the signature is as expected
+            if (serverSignature != Config.ServerSignature)
+                throw new InvalidCredentialException("Server's signature is wrong.");
+            
+            // Get the server's info
+            var serverInfoMsg = (Message)(await Message.ReceiveAsync(_cws))!;
+            if (serverInfoMsg.Type != MessageType.ServerInfo)
+                throw new InvalidCredentialException("Expected to receive server information.");
+            
+            // Send over our client's signature
+            var signatureBytes = Config.StringEncoding.GetBytes(Config.ClientSignature);
+            var signatureSegment = new ArraySegment<byte>(signatureBytes);
+            await _cws.SendAsync(signatureSegment, WebSocketMessageType.Text, true, CancellationToken.None);
 
+            // Send over out client's info
+            var version = Assembly.GetEntryAssembly()!.GetName().Version!;
+            var clientInfo = new ClientInformation(version, Config.Organization);
+            await new Message { Type = MessageType.ClientInfo, ClientInfo = clientInfo }.SendAsync(_cws);
+
+            // Get a username and password
             var u = username ?? ReadUsername();
             var p = password ?? ReadPassword();
-            var login = $"{u}:{p}";
-            var cBuffer = new List<byte>(Encoding.UTF8.GetBytes(login));
-
-            await _cws.SendAsync(
-                new ArraySegment<byte>(sBuffer.ToArray()),
-                WebSocketMessageType.Binary,
-                true,
-                CancellationToken.None
-            );
-
-            await _cws.SendAsync(
-                new ArraySegment<byte>(cBuffer.ToArray()),
-                WebSocketMessageType.Text,
-                true,
-                CancellationToken.None
-            );
-        });
+            var auth = new Authorization(u, p);
+            await new Message { Type = MessageType.PrivilegeElevation, AuthorizationInfo = auth }.SendAsync(_cws);
+        }).Wait();
     }
 
     public void Dispose()
@@ -66,7 +64,7 @@ public class Station : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    ~Station()
+    ~Client()
     {
         Dispose(false);
     }
@@ -81,61 +79,30 @@ public class Station : IDisposable
     }
 
 
-    private async Task Run()
+    public async Task Run()
     {
         var buffer = new byte[4096];
         if (_cws is null) throw new ArgumentNullException();
         while (_cws.State == WebSocketState.Open)
         {
-            var result = await _cws.ReceiveAsync(buffer, CancellationToken.None);
-            switch (result.MessageType)
+            var message = await Message.ReceiveAsync(_cws);
+            switch (message.Type)
             {
-                case WebSocketMessageType.Text:
-                    var encodedText = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    var message = JsonSerializer.Deserialize<Message>(encodedText);
-                    if (message == null) throw new ArgumentException();
-
-                    switch (message.type)
-                    {
-                        case MessageType.LoginSuccessful:
-                            Console.WriteLine("Successfully logged in to the network!");
-                            break;
-
-                        case MessageType.LoginFailed:
-                            Console.WriteLine(
-                                "Authentication has either failed or been revoked! Please restart this process!");
-                            break;
-
-                        case MessageType.PageRequest:
-                        case MessageType.Invalid:
-                        default:
-                            throw new ArgumentOutOfRangeException();
-                    }
-
+                case MessageType.AuthSuccessful:
+                    Console.WriteLine("Successfully logged in to the network!");
                     break;
 
-                case WebSocketMessageType.Close:
-                    await _cws.CloseOutputAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        string.Empty,
-                        CancellationToken.None
-                    );
-                    _cws.Dispose();
+                case MessageType.AuthFailed:
+                    Console.WriteLine(
+                        "Authentication for has either failed or been revoked! Please restart this process!");
                     break;
 
-                case WebSocketMessageType.Binary:
+                case MessageType.PageRequest:
+                case MessageType.Invalid:
                 default:
                     throw new ArgumentOutOfRangeException();
             }
         }
-    }
-
-
-    private static void Main(string[] args)
-    {
-        var uri = new Uri($"wss://{TunnelAddress}:{TunnelPort}/station-clock-in");
-        var station = new Station(uri, null, null);
-        station.Run().Wait();
     }
 
     // Retries connecting to a tunnel over and over.
@@ -189,8 +156,8 @@ public class Station : IDisposable
         }
     }
 
-    // Reads password from Console with optional masking character.
-    // If mask == '\0' then nothing is shown (no masking chars), characters are hidden entirely.
+// Reads password from Console with optional masking character.
+// If mask == '\0' then nothing is shown (no masking chars), characters are hidden entirely.
     private static string ReadPasswordString(char mask = '*')
     {
         var pwd = new StringBuilder();

@@ -1,9 +1,16 @@
-namespace Core;
+namespace Crayon.Box;
 
 public enum MessageType
 {
-    LoginSuccessful,
-    LoginFailed,
+    ServerInfo,
+    ClientInfo,
+
+    CloseRequest,
+    CloseResponse,
+
+    PrivilegeElevation,
+    AuthSuccessful,
+    AuthFailed,
 
     PageRequest,
     Invalid = int.MaxValue

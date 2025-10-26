@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace Tunnel;
+namespace Crayon.Box.Pages;
 
 public class Index : PageModel
 {

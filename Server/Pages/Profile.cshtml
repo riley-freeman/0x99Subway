@@ -1,18 +1,14 @@
 @page "/@{id}"
-@model Tunnel.Pages.Profile
+@model Crayon.Box.Pages.Profile
+
 
 @{
-    Layout = null;
+    Layout = "_Layout";
+    ViewBag.Title = $"{Model.Id} - ";
+    ViewBag.Organization = Model.Organization;
+    ViewBag.Ver = Model.Ver.ToString();
 }
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <title>@Model.Id - The Crayon Box 📦</title>
-    <link rel="stylesheet" href="css/site.css"/>
-</head>
-<body class="text-white black">
-<h1 class="text-l">The Crayon Box 📦</h1>
 @if (Model.ClientConnected())
 {
     <p>Miraculously, @@<span class="bold">@Model.Id</span> is online!</p>
@@ -24,7 +20,3 @@ else
 
 <h1 class="text-l" style="margin-top: 8rem;">Also you're a bit early.</h1>
 <p>This page is under construction.</p>
-
-
-</body>
-</html>

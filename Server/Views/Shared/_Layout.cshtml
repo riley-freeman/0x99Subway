@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>@ViewData["Title"]The Crayon Box 📦</title>
+
+    <link rel="stylesheet" href="css/globals.css"/>
+    <link rel="stylesheet" href="css/sections.css"/>
+    <link rel="stylesheet" href="css/search-boxes.css"/>
+</head>
+<body class="flex">
+<nav class="navigation-bar dark text-white text-white h-center flex flex-direction-column justify-space-between relative">
+    <div class="navigation-bar-top">
+        <a href="/" class="text-white no-decoration">
+            <h1 class="text-m bold block">The Crayon Box 📦</h1>
+        </a>
+        <input type="search" class="nav-search-box"/>
+    </div>
+
+
+    <div>
+        <a href="/login" class="text-white no-decoration">Login</a>
+        <a href="/register" class="text-white no-decoration">Register</a>
+    </div>
+</nav>
+
+<div class="_layout-body-content body-content">
+    @RenderBody()
+</div>
+
+<div class="left-navigation-bar dark text-white">
+    <p>@ViewData["Organization"]</p>
+    <p>@ViewData["Ver"]</p>
+</div>
+
+</body>
+</html>

@@ -2,6 +2,7 @@
 
 :root {
     --black: rgb(21, 21, 21);
+    --dark: rgb(46, 46, 46);
     --white: rgb(255, 255, 255);
 }
 
@@ -24,6 +25,7 @@ p {
     font-family: 'Open Sans', sans-serif;
 }
 
+
 /* Layout */
 .block {
     display: block;
@@ -36,6 +38,44 @@ p {
 .inline-block {
     display: inline-block;
 }
+
+.flex {
+    display: flex;
+}
+
+.relative {
+    position: relative;
+}
+
+.h-center {
+    justify-content: center;
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+
+.v-center {
+    align-items: center;
+}
+
+.flex-direction-column {
+    flex-direction: column;
+}
+
+.justify-space-between {
+    justify-content: space-between;
+}
+
+
+/* Sizing */
+.max-width {
+    width: 100%;
+}
+
+.max-height {
+    height: 100%;
+}
+
 
 /* Spacing */
 .no-margin {
@@ -85,6 +125,10 @@ p {
     font-style: italic !important;
 }
 
+.no-decoration {
+    text-decoration: none !important;
+}
+
 /* Colors */
 .black {
     background-color: var(--black);
@@ -92,5 +136,9 @@ p {
 
 .white {
     background-color: var(--white);
+}
+
+.dark {
+    background-color: var(--dark);
 }
 

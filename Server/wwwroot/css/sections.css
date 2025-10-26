@@ -1,0 +1,28 @@
+.body-content {
+    width: 100%;
+    min-height: 100vh;
+    
+    box-sizing: border-box;
+    padding: 2em;
+}
+
+.navigation-bar {
+    width: 20em;
+    height: 100vh;
+    box-sizing: border-box;
+    border-right: 1px black solid;
+    
+    padding: 2em;
+}
+
+.navigation-bar-top {
+    width: 100%;
+}
+
+.left-navigation-bar {
+    width: 32em;
+    height: 100vh;
+    box-sizing: border-box;
+    
+    padding: 2em;
+}
